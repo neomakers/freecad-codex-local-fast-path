@@ -10,6 +10,8 @@ The result is a practical split:
   calls the existing parametric FreeCAD tool.
 - A complex modeling request falls back to Codex CLI through
   `http://127.0.0.1:8787/v1`.
+- Activating the FreeCAD AI workbench repairs the local provider configuration
+  and starts the bridge automatically.
 - No API key is added by this project. The bridge uses the Codex login already
   present on the computer.
 

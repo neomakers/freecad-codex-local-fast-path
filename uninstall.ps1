@@ -26,6 +26,8 @@ function Restore-Optional([string]$Name, [string]$Destination) {
 }
 
 Restore-Optional "chat_widget.py" (Join-Path $plugin "freecad_ai\ui\chat_widget.py")
+Restore-Optional "InitGui.py" (Join-Path $plugin "InitGui.py")
 Restore-Optional "local_fast_path.py" (Join-Path $plugin "freecad_ai\core\local_fast_path.py")
+Restore-Optional "codex_autostart.py" (Join-Path $plugin "freecad_ai\core\codex_autostart.py")
 Restore-Optional "config.json" (Join-Path $versionRoot "FreeCADAI\config.json")
 Write-Host "Rollback complete. The backup was kept at $backup."

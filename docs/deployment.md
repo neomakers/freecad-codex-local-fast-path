@@ -33,7 +33,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 The installer discovers FreeCAD, discovers the versioned FreeCAD user folder,
 finds or installs FreeCAD AI, checks the expected source anchors, creates a
 timestamped backup, installs the payload, configures the localhost provider,
-starts the bridge, and records a manifest for rollback.
+starts the bridge, and records a manifest for rollback. The installed
+workbench also runs the same connection check when FreeCAD AI is activated, so
+opening FreeCAD manually does not depend on a previously running bridge.
 
 For a machine that already has FreeCAD AI:
 
@@ -57,6 +59,11 @@ To preserve an existing provider while still enabling the local fast path:
 `verify.ps1` exits with code `0` only when the plugin payload, chat patch, and
 configuration are present. The bridge status is included in the JSON report.
 `uninstall.ps1` restores the newest backup and never deletes the backup itself.
+
+The workbench activation hook is the normal runtime path. It repairs the
+integration-owned custom provider settings in both the JSON file and the
+in-memory FreeCAD AI config, then starts the bridge only when port 8787 is not
+ready.
 
 ## Updating the integration
 

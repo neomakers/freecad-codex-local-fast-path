@@ -11,7 +11,9 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
 $PayloadModule = Join-Path $RepoRoot "payload\freecad_ai\core\local_fast_path.py"
+$PayloadAutostart = Join-Path $RepoRoot "payload\freecad_ai\core\codex_autostart.py"
 $PatchMarker = "# CODEX_FREECAD_FAST_PATH_V1"
+$AutostartMarker = "# CODEX_FREECAD_AUTO_CONNECT_V1"
 
 function Write-Step([string]$Message) {
     Write-Host "[codex-freecad] $Message"
@@ -252,6 +254,36 @@ $import
     return $true
 }
 
+function Patch-InitGui([string]$InitGuiPath) {
+    $text = Read-Utf8 $InitGuiPath
+    if ($text.Contains($AutostartMarker)) {
+        $markerCount = ([regex]::Matches($text, [regex]::Escape($AutostartMarker))).Count
+        if ($markerCount -ne 1) {
+            throw "InitGui.py contains $markerCount auto-connect markers. Refusing to continue until duplicates are removed."
+        }
+        Write-Step "Workbench auto-connect patch already present"
+        return $false
+    }
+    $anchor = "        from freecad_ai.ui.chat_widget import get_chat_dock"
+    if (-not $text.Contains($anchor)) {
+        throw "Unsupported FreeCAD AI InitGui.py: workbench activation anchor was not found. No patch was applied."
+    }
+    $insertion = @"
+        $AutostartMarker
+        try:
+            from freecad_ai.core.codex_autostart import ensure_codex_connection
+            ensure_codex_connection()
+        except Exception:
+            pass
+$anchor
+"@
+    $position = $text.IndexOf($anchor, [StringComparison]::Ordinal)
+    $text = $text.Substring(0, $position) + $insertion.TrimEnd() + $text.Substring($position + $anchor.Length)
+    Write-Utf8 $InitGuiPath $text
+    Write-Step "Inserted workbench auto-connect into InitGui.py"
+    return $true
+}
+
 function Start-Bridge {
     $bridgeScript = Join-Path $RepoRoot "start_codex_freecad_bridge.ps1"
     $listening = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue
@@ -263,8 +295,8 @@ function Start-Bridge {
     }
 }
 
-if (-not (Test-Path -LiteralPath $PayloadModule)) {
-    throw "Repository payload is missing: $PayloadModule"
+if (-not (Test-Path -LiteralPath $PayloadModule) -or -not (Test-Path -LiteralPath $PayloadAutostart)) {
+    throw "Repository payload is incomplete: local fast path and auto-start modules are required."
 }
 
 $freecad = Resolve-FreeCADExe
@@ -272,12 +304,15 @@ $env:FREECAD_BIN = Split-Path -Parent $freecad
 $versionRoot = Get-FreeCADVersionRoot $freecad
 $plugin = Resolve-FreeCADAIPlugin $versionRoot
 $chat = Join-Path $plugin "freecad_ai\ui\chat_widget.py"
+$initGui = Join-Path $plugin "InitGui.py"
 $installedModule = Join-Path $plugin "freecad_ai\core\local_fast_path.py"
+$installedAutostart = Join-Path $plugin "freecad_ai\core\codex_autostart.py"
 $configDir = Join-Path $versionRoot "FreeCADAI"
 $config = Join-Path $configDir "config.json"
 $manifest = Join-Path $configDir "codex-freecad-integration.json"
 
 if (-not (Test-Path -LiteralPath $chat)) { throw "FreeCAD AI chat widget was not found: $chat" }
+if (-not (Test-Path -LiteralPath $initGui)) { throw "FreeCAD AI InitGui.py was not found: $initGui" }
 
 if ($CheckOnly) {
     $chatText = Read-Utf8 $chat
@@ -286,7 +321,9 @@ if ($CheckOnly) {
         FreeCADUserRoot = $versionRoot
         FreeCADAI = $plugin
         FastPathModule = (Test-Path -LiteralPath $installedModule)
+        AutoStartModule = (Test-Path -LiteralPath $installedAutostart)
         ChatPatch = $chatText.Contains($PatchMarker)
+        WorkbenchAutoConnect = (Read-Utf8 $initGui).Contains($AutostartMarker)
         Config = (Test-Path -LiteralPath $config)
         Bridge = $false
     }
@@ -295,7 +332,9 @@ if ($CheckOnly) {
         $checks.Bridge = $response.StatusCode -eq 200
     } catch {}
     $checks | ConvertTo-Json -Depth 5
-    if (-not $checks.FastPathModule -or -not $checks.ChatPatch -or -not $checks.Config) {
+    if (-not $checks.FastPathModule -or -not $checks.AutoStartModule -or
+        -not $checks.ChatPatch -or -not $checks.WorkbenchAutoConnect -or
+        -not $checks.Config) {
         exit 2
     }
     exit 0
@@ -318,7 +357,7 @@ if ($firstInstall) {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $backupDir = Join-Path $configDir "CodexFreeCADBackups\$timestamp"
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
-    foreach ($path in @($chat, $installedModule, $config)) {
+foreach ($path in @($chat, $initGui, $installedModule, $installedAutostart, $config)) {
         if (Test-Path -LiteralPath $path) {
             Copy-Item -LiteralPath $path -Destination $backupDir -Force
         }
@@ -326,7 +365,9 @@ if ($firstInstall) {
 }
 
 Copy-Item -LiteralPath $PayloadModule -Destination $installedModule -Force
+Copy-Item -LiteralPath $PayloadAutostart -Destination $installedAutostart -Force
 [void](Patch-ChatWidget $chat)
+[void](Patch-InitGui $initGui)
 Update-FreeCADAIConfig $config
 
 $manifestData = [ordered]@{
@@ -336,6 +377,8 @@ $manifestData = [ordered]@{
     freecad = $freecad
     freecad_user_root = $versionRoot
     freecad_ai_plugin = $plugin
+    bridge_start_script = (Join-Path $RepoRoot "start_codex_freecad_bridge.ps1")
+    keep_provider = [bool]$KeepProvider
     backup_dir = $backupDir
     bridge_url = "http://127.0.0.1:8787/v1"
     patch_marker = $PatchMarker

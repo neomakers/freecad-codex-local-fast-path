@@ -34,6 +34,10 @@ Guard every upstream patch with an exact marker and a narrow source anchor.
 Create a timestamped backup before editing. If the anchor disappears, fail
 closed and ask for an upstream compatibility update.
 
+Start the bridge from the workbench activation hook as well as from the manual
+launcher. The hook must be idempotent, repair only the integration-owned
+provider settings, and return quickly when the localhost port is already up.
+
 ## Safe evolution
 
 Add a new fast-path command only when its grammar is unambiguous, its handler

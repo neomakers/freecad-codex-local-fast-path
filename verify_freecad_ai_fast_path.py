@@ -16,6 +16,7 @@ if not plugin_path or not Path(plugin_path).is_dir():
 sys.path.insert(0, plugin_path)
 
 from freecad_ai.core.local_fast_path import plan_local_tool
+from freecad_ai.core.codex_autostart import ensure_codex_connection
 from freecad_ai.tools.freecad_tools import _handle_create_primitive
 
 
@@ -35,7 +36,11 @@ doc = App.newDocument("FastPathVerification")
 result = _handle_create_primitive(**plan.arguments)
 assert result.success, result.error
 
+connection = ensure_codex_connection()
+assert connection["ok"], connection
+
 box = doc.getObject(result.data["name"])
 assert box is not None
 assert (box.Length, box.Width, box.Height) == (40.0, 30.0, 20.0)
 print("PASS: local fast path created a 40 x 30 x 20 mm PartDesign box")
+print("PASS: FreeCAD AI auto-connect is ready")

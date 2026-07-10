@@ -17,7 +17,7 @@ jobs:
       - name: Compile Python sources
         shell: pwsh
         run: |
-          python -m py_compile codex_freecad_bridge.py payload/freecad_ai/core/local_fast_path.py verify_freecad_ai_fast_path.py
+          python -m py_compile codex_freecad_bridge.py payload/freecad_ai/core/local_fast_path.py payload/freecad_ai/core/codex_autostart.py verify_freecad_ai_fast_path.py
       - name: Parse PowerShell entry points
         shell: pwsh
         run: |

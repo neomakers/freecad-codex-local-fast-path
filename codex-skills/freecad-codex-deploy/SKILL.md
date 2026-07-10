@@ -23,6 +23,10 @@ computer. Keep the two execution paths explicit:
    otherwise configure the custom provider at `http://127.0.0.1:8787/v1`.
 5. Run `verify.ps1` and report its JSON plus the bridge health result.
 
+After installation, activating the FreeCAD AI workbench itself repairs the
+integration-owned provider settings and starts the bridge if it is down. The
+user does not need to launch a separate bridge window.
+
 The installer must discover paths. Never copy the local `D:` drive path or the
 local `E:` workspace path into a user's configuration. It creates a timestamped
 backup and refuses to patch `chat_widget.py` if the expected upstream anchor is
