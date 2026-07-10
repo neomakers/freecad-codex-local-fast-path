@@ -43,4 +43,4 @@ box = doc.getObject(result.data["name"])
 assert box is not None
 assert (box.Length, box.Width, box.Height) == (40.0, 30.0, 20.0)
 print("PASS: local fast path created a 40 x 30 x 20 mm PartDesign box")
-print("PASS: FreeCAD AI auto-connect is ready")
+print("PASS: FreeCAD_AI_Mod auto-connect is ready")

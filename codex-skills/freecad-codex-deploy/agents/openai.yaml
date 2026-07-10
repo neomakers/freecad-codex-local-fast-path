@@ -1,4 +1,4 @@
 interface:
   display_name: "FreeCAD Codex Deploy"
-  short_description: "Deploy the local Codex fast path for FreeCAD AI"
-  default_prompt: "Deploy and verify the local Codex fast path for FreeCAD AI on this Windows computer."
+  short_description: "Deploy the local Codex fast path for FreeCAD_AI_Mod"
+  default_prompt: "Deploy and verify the local Codex fast path for FreeCAD_AI_Mod on this Windows computer."

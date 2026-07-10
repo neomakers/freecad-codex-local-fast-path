@@ -1,11 +1,11 @@
 ---
 name: freecad-codex-deploy
-description: Deploy and troubleshoot the local Codex CLI integration for FreeCAD AI on Windows. Use when a user wants FreeCAD AI to call Codex without an API key, wants the 20 ms local fast path for routine CAD commands, needs installation on another computer, or wants to verify, update, or roll back this integration.
+description: Deploy and troubleshoot the local Codex CLI integration for FreeCAD_AI_Mod on Windows. Use when a user wants FreeCAD_AI_Mod to call Codex without an API key, wants the 20 ms local fast path for routine CAD commands, needs installation on another computer, or wants to verify, update, or roll back this integration.
 ---
 
 # FreeCAD Codex Deploy
 
-Use this skill to reproduce the tested FreeCAD AI route on another Windows
+Use this skill to reproduce the tested `FreeCAD_AI_Mod` route on another Windows
 computer. Keep the two execution paths explicit:
 
 - Deterministic primitive commands run inside the FreeCAD AI worker and reuse
@@ -17,15 +17,15 @@ computer. Keep the two execution paths explicit:
 
 1. Locate the repository root containing `install.ps1`.
 2. Run PowerShell with a process-scoped execution-policy bypass.
-3. Run `install.ps1 -InstallPlugin -StartFreeCAD` when FreeCAD AI is missing.
+3. Run `install.ps1 -InstallPlugin -StartFreeCAD` when the upstream FreeCAD AI package is missing. The installer displays it as `FreeCAD_AI_Mod`.
    Omit `-InstallPlugin` when it is already installed.
 4. Use `-KeepProvider` when the user wants to preserve an existing provider;
    otherwise configure the custom provider at `http://127.0.0.1:8787/v1`.
 5. Run `verify.ps1` and report its JSON plus the bridge health result.
 
-After installation, activating the FreeCAD AI workbench itself repairs the
-integration-owned provider settings and starts the bridge if it is down. The
-user does not need to launch a separate bridge window.
+After installation, loading, activating, or opening the `FreeCAD_AI_Mod` chat
+repairs the integration-owned provider settings and starts the bridge if it is
+down. The user does not need to launch a separate bridge window.
 
 The installer must discover paths. Never copy the local `D:` drive path or the
 local `E:` workspace path into a user's configuration. It creates a timestamped

@@ -14,6 +14,9 @@ $PayloadModule = Join-Path $RepoRoot "payload\freecad_ai\core\local_fast_path.py
 $PayloadAutostart = Join-Path $RepoRoot "payload\freecad_ai\core\codex_autostart.py"
 $PatchMarker = "# CODEX_FREECAD_FAST_PATH_V1"
 $AutostartMarker = "# CODEX_FREECAD_AUTO_CONNECT_V1"
+$LoadAutostartMarker = "# CODEX_FREECAD_AUTO_CONNECT_LOAD_V1"
+$CommandAutostartMarker = "# CODEX_FREECAD_AUTO_CONNECT_COMMAND_V1"
+$DisplayName = "FreeCAD_AI_Mod"
 
 function Write-Step([string]$Message) {
     Write-Host "[codex-freecad] $Message"
@@ -114,6 +117,31 @@ function Read-Utf8([string]$Path) {
 function Write-Utf8([string]$Path, [string]$Text) {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($Path, $Text, $utf8)
+}
+
+function Patch-DisplayName([string]$PluginRoot) {
+    $paths = @(
+        (Join-Path $PluginRoot "Init.py"),
+        (Join-Path $PluginRoot "InitGui.py"),
+        (Join-Path $PluginRoot "package.xml"),
+        (Join-Path $PluginRoot "Resources\panels\FreeCADAIPrefs.ui")
+    )
+    $sourceRoot = Join-Path $PluginRoot "freecad_ai"
+    if (Test-Path -LiteralPath $sourceRoot) {
+        $paths += Get-ChildItem -LiteralPath $sourceRoot -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in @(".py", ".ui", ".xml", ".ts") } |
+            Select-Object -ExpandProperty FullName
+    }
+    $changed = $false
+    foreach ($path in ($paths | Where-Object { Test-Path -LiteralPath $_ } | Sort-Object -Unique)) {
+        $text = Read-Utf8 $path
+        if ($text.Contains("FreeCAD AI")) {
+            Write-Utf8 $path ($text.Replace("FreeCAD AI", $DisplayName))
+            $changed = $true
+        }
+    }
+    if ($changed) { Write-Step "Renamed the visible workbench to $DisplayName" }
+    return $changed
 }
 
 function Add-OrSetProperty($Object, [string]$Name, $Value) {
@@ -284,6 +312,59 @@ $anchor
     return $true
 }
 
+function Patch-InitGuiEntryPoints([string]$InitGuiPath) {
+    $text = Read-Utf8 $InitGuiPath
+    $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $changed = $false
+
+    if (-not $text.Contains($LoadAutostartMarker)) {
+        $anchor = "import FreeCAD as App"
+        $position = $text.IndexOf($anchor, [StringComparison]::Ordinal)
+        if ($position -lt 0) {
+            throw "Unsupported FreeCAD AI InitGui.py: import anchor was not found. No load patch was applied."
+        }
+        $lineEnd = $text.IndexOf($newline, $position)
+        if ($lineEnd -lt 0) { $lineEnd = $text.Length }
+        $block = @(
+            $LoadAutostartMarker,
+            "try:",
+            "    from freecad_ai.core.codex_autostart import ensure_codex_connection",
+            "    ensure_codex_connection()",
+            "except Exception:",
+            "    pass"
+        ) -join $newline
+        $insertAt = if ($lineEnd -lt $text.Length) { $lineEnd + $newline.Length } else { $lineEnd }
+        $text = $text.Substring(0, $insertAt) + $newline + $block + $newline + $text.Substring($insertAt)
+        $changed = $true
+        Write-Step "Inserted plugin-load auto-connect into InitGui.py"
+    }
+
+    if (-not $text.Contains($CommandAutostartMarker)) {
+        $anchor = "    def Activated(self, index=0):"
+        $position = $text.IndexOf($anchor, [StringComparison]::Ordinal)
+        if ($position -lt 0) {
+            throw "Unsupported FreeCAD AI InitGui.py: chat command anchor was not found. No command patch was applied."
+        }
+        $lineEnd = $text.IndexOf($newline, $position)
+        if ($lineEnd -lt 0) { $lineEnd = $text.Length }
+        $block = @(
+            "        $CommandAutostartMarker",
+            "        try:",
+            "            from freecad_ai.core.codex_autostart import ensure_codex_connection",
+            "            ensure_codex_connection()",
+            "        except Exception:",
+            "            pass"
+        ) -join $newline
+        $insertAt = if ($lineEnd -lt $text.Length) { $lineEnd + $newline.Length } else { $lineEnd }
+        $text = $text.Substring(0, $insertAt) + $block + $newline + $text.Substring($insertAt)
+        $changed = $true
+        Write-Step "Inserted chat-command auto-connect into InitGui.py"
+    }
+
+    if ($changed) { Write-Utf8 $InitGuiPath $text }
+    return $changed
+}
+
 function Start-Bridge {
     $bridgeScript = Join-Path $RepoRoot "start_codex_freecad_bridge.ps1"
     $listening = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue
@@ -324,6 +405,9 @@ if ($CheckOnly) {
         AutoStartModule = (Test-Path -LiteralPath $installedAutostart)
         ChatPatch = $chatText.Contains($PatchMarker)
         WorkbenchAutoConnect = (Read-Utf8 $initGui).Contains($AutostartMarker)
+        LoadAutoConnect = (Read-Utf8 $initGui).Contains($LoadAutostartMarker)
+        ChatCommandAutoConnect = (Read-Utf8 $initGui).Contains($CommandAutostartMarker)
+        DisplayName = (Read-Utf8 $initGui).Contains("MenuText = `"$DisplayName`"")
         Config = (Test-Path -LiteralPath $config)
         Bridge = $false
     }
@@ -334,7 +418,8 @@ if ($CheckOnly) {
     $checks | ConvertTo-Json -Depth 5
     if (-not $checks.FastPathModule -or -not $checks.AutoStartModule -or
         -not $checks.ChatPatch -or -not $checks.WorkbenchAutoConnect -or
-        -not $checks.Config) {
+        -not $checks.LoadAutoConnect -or -not $checks.ChatCommandAutoConnect -or
+        -not $checks.DisplayName -or -not $checks.Config) {
         exit 2
     }
     exit 0
@@ -368,15 +453,18 @@ Copy-Item -LiteralPath $PayloadModule -Destination $installedModule -Force
 Copy-Item -LiteralPath $PayloadAutostart -Destination $installedAutostart -Force
 [void](Patch-ChatWidget $chat)
 [void](Patch-InitGui $initGui)
+[void](Patch-InitGuiEntryPoints $initGui)
+[void](Patch-DisplayName $plugin)
 Update-FreeCADAIConfig $config
 
 $manifestData = [ordered]@{
-    integration_version = "1.0.0"
+    integration_version = "1.1.0"
     installed_at = (Get-Date).ToString("o")
     repository = "Codex-FreeCAD local fast path"
     freecad = $freecad
     freecad_user_root = $versionRoot
     freecad_ai_plugin = $plugin
+    display_name = $DisplayName
     bridge_start_script = (Join-Path $RepoRoot "start_codex_freecad_bridge.ps1")
     keep_provider = [bool]$KeepProvider
     backup_dir = $backupDir

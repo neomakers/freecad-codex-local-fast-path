@@ -51,7 +51,7 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 def _repair_config(integration_dir: Path, manifest: dict) -> bool:
-    """Make the installed workbench use the configured local bridge."""
+    """Make disk, FreeCAD preferences, and the live config use the bridge."""
     if manifest.get("keep_provider"):
         return False
     path = integration_dir / "config.json"
@@ -72,23 +72,38 @@ def _repair_config(integration_dir: Path, manifest: dict) -> bool:
     config["mode"] = "act"
     config["enable_tools"] = True
     config["tools_detected"] = True
+    runtime_changed = False
+    # FreeCAD's Preferences page can retain an older provider selection and
+    # override config.json during load. Repair the singleton and mirror it
+    # back to ParamGet so the next client cannot jump back to OpenAI.
+    try:
+        from ..config import get_config, save_current_config
+
+        current = get_config()
+        runtime_changed = (
+            current.provider.name != "custom"
+            or current.provider.base_url != BRIDGE_URL
+            or current.provider.model != "codex-cli"
+            or current.mode != "act"
+            or current.enable_tools is not True
+            or current.tools_detected is not True
+        )
+        current.provider.name = "custom"
+        current.provider.base_url = BRIDGE_URL
+        current.provider.model = "codex-cli"
+        current.mode = "act"
+        current.enable_tools = True
+        current.tools_detected = True
+    except Exception:
+        current = None
     if changed:
         _write_json(path, config)
-        # The settings module may already have a singleton in this FreeCAD
-        # session. Keep it aligned with the file we just repaired.
+    if current is not None and (changed or runtime_changed):
         try:
-            from ..config import get_config
-
-            current = get_config()
-            current.provider.name = "custom"
-            current.provider.base_url = BRIDGE_URL
-            current.provider.model = "codex-cli"
-            current.mode = "act"
-            current.enable_tools = True
-            current.tools_detected = True
+            save_current_config()
         except Exception:
             pass
-    return changed
+    return changed or runtime_changed
 
 
 def _bridge_ready() -> bool:
@@ -126,7 +141,7 @@ def _start_bridge(manifest: dict) -> bool:
 
 
 def ensure_codex_connection() -> dict:
-    """Repair config and start the bridge when the AI workbench activates."""
+    """Repair config and start the bridge before any chat request is sent."""
     integration_dir = _integration_dir()
     if integration_dir is None:
         return {"ok": False, "reason": "FreeCAD config directory unavailable"}
