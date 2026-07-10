@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import glob
 import json
-import locale
 import os
 import re
 import shutil
@@ -29,6 +28,7 @@ from typing import Any
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
 DEFAULT_WORKDIR = str(Path(__file__).resolve().parent)
+DEFAULT_CODEX_MODEL = "gpt-5.5"
 
 
 OUTPUT_SCHEMA = {
@@ -96,6 +96,11 @@ def resolve_codex_exe() -> Path:
     if found:
         return Path(found)
     raise FileNotFoundError("Could not find Codex CLI. Install or open Codex desktop first.")
+
+
+def resolve_codex_model() -> str:
+    """Choose a model supported by the bundled Codex CLI, with an override."""
+    return os.environ.get("CODEX_BRIDGE_MODEL", "").strip() or DEFAULT_CODEX_MODEL
 
 
 def content_to_text(content: Any) -> str:
@@ -287,6 +292,17 @@ def extract_json_object(text: str) -> dict[str, Any]:
         raise
 
 
+def encode_codex_stdin(prompt: str) -> bytes:
+    """Encode prompts explicitly as UTF-8 for the Codex CLI stdin pipe.
+
+    ``subprocess`` text mode uses the Windows locale by default. On a Chinese
+    Windows installation that can be CP936, which produces bytes Codex rejects
+    as invalid UTF-8. Replacing only malformed surrogate code points keeps the
+    pipe valid UTF-8 without changing normal Unicode text.
+    """
+    return prompt.encode("utf-8", errors="replace")
+
+
 def normalize_codex_result(raw: str) -> dict[str, Any]:
     data = extract_json_object(raw)
     content = data.get("content") or ""
@@ -351,9 +367,7 @@ def run_codex(body: dict[str, Any], keepalive=None, timeout: int = 240) -> dict[
         str(result_path),
         "-",
     ]
-    model = os.environ.get("CODEX_BRIDGE_MODEL")
-    if model:
-        cmd[2:2] = ["--model", model]
+    cmd[2:2] = ["--model", resolve_codex_model()]
 
     env = os.environ.copy()
     env.setdefault("NO_COLOR", "1")
@@ -366,13 +380,10 @@ def run_codex(body: dict[str, Any], keepalive=None, timeout: int = 240) -> dict[
             stdin=subprocess.PIPE,
             stdout=log,
             stderr=subprocess.STDOUT,
-            text=True,
-            encoding=locale.getpreferredencoding(False),
-            errors="replace",
             env=env,
         )
         assert proc.stdin is not None
-        proc.stdin.write(prompt)
+        proc.stdin.write(encode_codex_stdin(prompt))
         proc.stdin.close()
 
         deadline = time.time() + timeout
