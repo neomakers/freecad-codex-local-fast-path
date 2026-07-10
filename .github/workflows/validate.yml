@@ -1,0 +1,29 @@
+name: Validate FreeCAD Codex integration
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  portable-checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run parser tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Compile Python sources
+        shell: pwsh
+        run: |
+          python -m py_compile codex_freecad_bridge.py payload/freecad_ai/core/local_fast_path.py verify_freecad_ai_fast_path.py
+      - name: Parse PowerShell entry points
+        shell: pwsh
+        run: |
+          $files = @("install.ps1", "verify.ps1", "uninstall.ps1", "start_codex_freecad_bridge.ps1", "start_freecad_with_codex_ai.ps1")
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { throw "PowerShell parse failed for $file`: $($errors[0].Message)" }
+          }
